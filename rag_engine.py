@@ -3,7 +3,7 @@ import numpy as np
 from groq import Groq
 from pypdf import PdfReader
 from sentence_transformers import SentenceTransformer
-from pathlib import path
+from pathlib import Path
 
 #load pdfs
 def load_pdf (pdf_path):
@@ -23,11 +23,11 @@ def create_chunks(full_text, chunksize = 500, overlap=100):
     chunk = full_text[start:end]    #[0:500]          [400:900]        [800:1300]
     if chunk.strip():
       chunks.append(chunk)
-    start = end - overlap     #500-100=400       900-100=800      1300-100=1200
+    start = end - overlap           #500-100=400       900-100=800      1300-100=1200
   return chunks
   
 #embedding
-def build_vectors (chunks, model_name = "all-MiniLM-L6-v2"):
+def build_vectors (chunks, model_name = "all-MiniLM-L6-v2"):     #all-mini its is sentence transformer embedding model
   if not chunks:
     raise ValueError("cannot apply embedding without chunks")
   embed_model = SentenceTransformer(model_name)
@@ -38,11 +38,11 @@ def build_vectors (chunks, model_name = "all-MiniLM-L6-v2"):
   return index, embed_model
 
 #call loadpdf, chunk, embedding
-def load_base (pdf_path = ""):
+def load_base (pdf_path = "college_docs"):
   chunks = []
-  for pdf in path(pdf_path).glob("*.pdf"):
-  full_text = load_pdf(pdf_path)
-  chunks.extend(create_chunks(full_text))
+  for pdf in Path (pdf_path).glob("*.pdf"):
+    full_text = load_pdf(pdf)
+    chunks.extend(create_chunks(full_text))
   index, embed_model = build_vectors(chunks)
   return index, embed_model, chunks
 
@@ -54,15 +54,15 @@ def retrive_content (question, embed_model, chunks, index, num_chunks=3):
     raise ValueError("Request atleast one or more chunks")
   query_embed = embed_model.encode([question], convert_to_numpy=True)
   faiss.normalize_L2(query_embed)
-  sim_scores, vec_indices = index.search(query_embed,min(num_chunks, len(chunks)))
+  sim_scores, vec_indices = index.search(query_embed, min(num_chunks, len(chunks)))
   background = ""
   for i in vec_indices[0]:
-    if i!=-1:
+    if i!= -1:
       background +=chunks[i]+ "\n\n"
   return background
 
 #ask:
-def ask_rag (question, embed_model, chunks, index, api_key, num_chunks=3, model_name="openai/gpt-oss-120b"):
+def ask_rag (question, embed_model, chunks, index, api_key, num_chunks =3, model_name="openai/gpt-oss-120b"):
   key = api_key
   if not key:
     raise ValueError("API key missing")
@@ -71,12 +71,12 @@ def ask_rag (question, embed_model, chunks, index, api_key, num_chunks=3, model_
   Answer user questin using only document background below
   Do not invent or assume facts.
   If information not available , simply say information missing.
-  Document Background : """+ background + "user question" + question + "answer:"
+  Document Background : """ + background + "user question" + question + "answer:"
   client = Groq(api_key = key)
   response = client.chat.completions.create(
     model = model_name,
     messages = [{"role" : "user",
                  "content" : prompt}],
-                 temperature = 0.3,
+                temperature = 0.3,
   )
   return response.choices[0].message.content
